@@ -3,3 +3,9 @@
 .RData
 *.Rproj
 
+# ignore cache and data files
+PA02_cache
+*.bz2
+*.csv
+*.html
+
