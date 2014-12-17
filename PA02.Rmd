@@ -9,6 +9,8 @@ output:
 ## &nbsp;
 ## Synopsis
 
+This report was produced by the author as a student's exercise during the online course ["Data Science - Reproducible Research"](https://www.coursera.org/course/repdata) taken in Dezember 2014.
+
 Analysing the data from the **U.S. National Oceanic and Atmospheric Administration’s (NOAA) storm database** for the years 1950 to 2011, the following **event types** were found most damaging regarding:  
 * **human fatalities and injuries:**    
 * **material damage to properties and crops:**    
@@ -35,12 +37,22 @@ library(data.table)
 
 * **note:** run this once, then set chunk option `eval=FALSE`
 
-```{r download, eval=FALSE}
+```{r download-1, eval=FALSE}
 
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 download.file(url,StormDataFile,method="curl")
 
 ```
+```{r download-2}
+
+print(paste("the file was downloaded on:", file.info(StormDataFile)$mtime))
+
+```
+
+* **note:**  
+    This file had been prepared and uploaded by the course staff. It contains events from
+    1950 to 2011. For more recent data, and for information about the history of the data,
+    see the [NOOA - Storm Events Database](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=collection).
 
 #### &nbsp;
 #### read the data file into the data table STORM_RAW
@@ -111,7 +123,7 @@ summary(STORM[, list(PropDamage, CropDamage)])
 
 ```
 
-3. As per [documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf), table 2.1.1 page 6, the following are **Permitted Storm Data Events**:
+3. **Storm Data Event Types:** As per [documentation, table 2.1.1 page 6](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf), the following event types are permitted  (copy/paste/edited from the .pdf):
 
 ```{r clean-3a, cache=TRUE}
 
@@ -165,13 +177,16 @@ permitted_EVTYPES <- list(
         "Winter Storm",
         "Winter Weather" 
   )
+
+# convert all event types to upper case
+STORM <- STORM[ ,EVTYPE:=toupper(EVTYPE)]
 permitted_EVTYPES <- lapply(permitted_EVTYPES, toupper)
 
 # estimate what we are missing with the non standard EVTYPE
-number_illegal <- dim(STORM[!toupper(EVTYPE) %in% permitted_EVTYPES,])[1]
+number_illegal <- dim(STORM[!EVTYPE %in% permitted_EVTYPES,])[1]
 ALL <- STORM[, `:=`(sF=sum(FATALITIES),sI=sum(INJURIES),sP=sum(PropDamage),sC=sum(CropDamage))
              ][1, list(sF,sI,sP,sC)]
-NON <- STORM[!toupper(EVTYPE) %in% permitted_EVTYPES, ][,
+NON <- STORM[!EVTYPE %in% permitted_EVTYPES, ][,
              `:=`(sF=sum(FATALITIES),sI=sum(INJURIES),sP=sum(PropDamage),sC=sum(CropDamage))
              ][1, list(sF,sI,sP,sC)]
 pctNb <- round(100*number_illegal/dim(STORM)[1], 2)                 # %entries
@@ -189,9 +204,6 @@ There are `r number_illegal` entries with non permitted event types. They repres
 So let's take a closer look at them:
     
 ```{r clean-3b}
-
-# convert all event types to upper case
-STORM <- STORM[ ,EVTYPE:=toupper(EVTYPE)]
 
 # list the non permitted events
 sort(unique(STORM[!EVTYPE %in% permitted_EVTYPES, EVTYPE]))
@@ -217,7 +229,8 @@ STORM <- STORM[, EVTYPE:=sub("THUNDERTORM", "THUNDERSTORM", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("TSTM", "THUNDERSTORM", EVTYPE)]
 # mispelled TORNADO
 STORM <- STORM[, EVTYPE:=sub("TORNDAO", "TORNADO", EVTYPE)]
-# some obvious adaptions
+
+# some obvious adaptions: remove storm names, clean up floods, etc
 STORM <- STORM[, EVTYPE:=sub("^HIGH *WIND.*", "HIGH WIND", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^HURRICANE.*", "HURRICANE (TYPHOON)", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^TYPHOON.*", "HURRICANE (TYPHOON)", EVTYPE)]
@@ -225,15 +238,15 @@ STORM <- STORM[, EVTYPE:=sub("^THUNDERSTORM.*", "THUNDERSTORM WIND", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^SEVERE THUNDERSTORM.*", "THUNDERSTORM WIND", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^TORNADO.*", "TORNADO", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^TROPICAL STORM.*", "TROPICAL STORM", EVTYPE)]
-STORM <- STORM[, EVTYPE:=sub("^FLOOD.FLASH", "FLASH FLOOD", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^FLOOD.*FLASH.*", "FLASH FLOOD", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^FLASH FLOOD.*", "FLASH FLOOD", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^RIVER.*FLOOD.*", "FLOOD", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^URBAN FLOOD.*", "FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^FLOOD.*", "FLASH FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^HAIL.*", "HAIL", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("SMALL HAIL", "HAIL", EVTYPE)]
-STORM <- STORM[, EVTYPE:=sub("^URBAN FLOOD.*", "FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^WILD.*", "WILDFIRE", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^STORM SURGE$", "STORM SURGE/TIDE", EVTYPE)]
-STORM <- STORM[, EVTYPE:=sub("^FLASH FLOOD.*", "FLASH FLOOD", EVTYPE)]
-STORM <- STORM[, EVTYPE:=sub("RIVER.*FLOOD", "FLOOD", EVTYPE)]
 
 # estimate what we are missing now
 number_illegal <- dim(STORM[!EVTYPE %in% permitted_EVTYPES,])[1]
@@ -251,13 +264,13 @@ STORM <- STORM[EVTYPE %in% permitted_EVTYPES, ]
 
 ```
 
-There remain `r number_illegal` entries with non permitted event types. They represent:
+There remained `r number_illegal` entries with non permitted event types, representing:
 
 * `r pctNb`% of the number of entries
 * `r pctHD`% of the total of fatalities + injuries
 * `r pctMD`% of the total of material damage (prop + crop)
 
-That's good enough for the analysis to begin
+That's good enough, so they have been removed from the dataset. Let's begin the analysis.
 
     
 
@@ -282,3 +295,7 @@ sessionInfo()
 
 ```
 
+The RMarkdown file has been published as a [Github Project](https://github.com/ronasta/RepData_PeerAssessment2)  
+  
+The report was produced using `RStudio/knittr`  
+**on `r format(Sys.time(), "%F at %H:%M:%S (%Z, GMT%z)")`**  
