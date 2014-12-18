@@ -12,11 +12,11 @@ output:
 This report was produced by the author as a student's exercise during the online course ["Data Science - Reproducible Research"](https://www.coursera.org/course/repdata) taken in Dezember 2014.
 
 Analysing the data from the **U.S. National Oceanic and Atmospheric Administration’s (NOAA) storm database** for the years 1950 to 2011, the following **event types** were found most damaging regarding:  
-* **human fatalities and injuries:**    
-* **material damage to properties and crops:**    
+* **human fatalities and injuries:** Tornadoes are, by far, the worst.    
+* **material damage to properties and crops:** Hurricanes, Flash Floods and Tornadoes are the leaders    
 &nbsp;  
 The database is a mess and needs a lot of consideration regarding **cleaning the data**. 
-Especially, there are many non standard **Event Types**.
+Especially, there are many non standard **Event Types** and at least one event with largly exagerated damgae values.
 
 
 ## &nbsp;
@@ -24,11 +24,12 @@ Especially, there are many non standard **Event Types**.
 
 #### initialize
 
-```{r setup, results='hide'}
+```{r setup, results='hide', error=FALSE, message=FALSE}
 
 StormDataFile <- "StormData.csv.bz2"
 
 library(data.table)
+library(plyr)
 
 ```
 
@@ -86,7 +87,7 @@ print("")
 STORM <- STORM[, list(BGN_DATE, EVTYPE, FATALITIES, INJURIES,
                       PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP, REFNUM)]
 # for the begin-date, only the year is needed
-STORM <- STORM[, Year:=sub(".*/([0-9]{4}).*", "\\1", BGN_DATE)][, BGN_DATE:=NULL]
+STORM <- STORM[, EventYear:=sub(".*/([0-9]{4}).*", "\\1", BGN_DATE)][, BGN_DATE:=NULL]
 
 str(STORM)
 
@@ -95,7 +96,7 @@ str(STORM)
 &nbsp;  
 2. Tidy up the prop and crop damage values, putting them into one numeric column each
 
-```{r clean-2, cache=TRUE}
+```{r clean-2a, cache=TRUE}
 
 entries <- dim(STORM)[1]
 
@@ -123,7 +124,48 @@ summary(STORM[, list(PropDamage, CropDamage)])
 
 ```
 
-3. **Storm Data Event Types:** As per [documentation, table 2.1.1 page 6](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf), the following event types are permitted  (copy/paste/edited from the .pdf):
+* **note:**  
+    There are only a few non standard exponents and, for the purpose of this assignment,
+    I decided to **ignore them** (remove them from the dataset).  
+    
+&nbsp;  
+**looking for outliers:**
+
+```{r clean-2b, cache=TRUE, results='hold'}
+
+summary(STORM[, list(FATALITIES, INJURIES)])
+print(" ")
+summary(STORM[, list(PropDamage, CropDamage)])
+
+```
+
+The maximum values for Prop and Crop damages look rather suspicious ($ 115 **billions??**). Let's find out where these come from:
+
+```{r clean-2c, cache=TRUE}
+
+# get the REFNUM of the 2 max for prop and crop
+pRef <- STORM[which.max(PropDamage), REFNUM]
+cRef <- STORM[which.max(CropDamage), REFNUM]
+
+# print the complete event reports
+print(STORM_RAW[REFNUM==pRef], )
+# print(STORM_RAW[REFNUM==cRef], )
+
+```
+  
+* Well, from the remarks of the first event (115bn PropDamage), follows clearly, that this should be **millions**, not billions.  
+* As for the second, the 5bn CropDamage, this could be plausible as thousands of acres stayed under water (I did not print it out as the description is very long).  
+* Correct the first one:
+
+```{r clean-2d, cache=TRUE}
+
+# millions not billions:
+STORM <- STORM[REFNUM==pRef, `:=`(PropDamage=PropDamage/1000,CropDamage=CropDamage/1000)]
+
+```
+
+&nbsp;  
+3. **Storm Data Event Types:** As per [documentation, table 2.1.1 page 6](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf), the following event types are permitted  (*manually* copy/paste/edited from the .pdf):
 
 ```{r clean-3a, cache=TRUE}
 
@@ -243,10 +285,13 @@ STORM <- STORM[, EVTYPE:=sub("^FLASH FLOOD.*", "FLASH FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^RIVER.*FLOOD.*", "FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^URBAN FLOOD.*", "FLOOD", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^FLOOD.*", "FLASH FLOOD", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^RIP CURRENT.*", "RIP CURRENT", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^HAIL.*", "HAIL", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("SMALL HAIL", "HAIL", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^WILD.*", "WILDFIRE", EVTYPE)]
 STORM <- STORM[, EVTYPE:=sub("^STORM SURGE$", "STORM SURGE/TIDE", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^EXTREME COLD$", "EXTREME COLD/WIND CHILL", EVTYPE)]
+STORM <- STORM[, EVTYPE:=sub("^FOG$", "DENSE FOG", EVTYPE)]
 
 # estimate what we are missing now
 number_illegal <- dim(STORM[!EVTYPE %in% permitted_EVTYPES,])[1]
@@ -276,6 +321,114 @@ That's good enough, so they have been removed from the dataset. Let's begin the 
 
 ## &nbsp;
 ## Results
+
+### &nbsp;
+### Introduction
+
+From the [NOOA - Storm Events Database - EventTypes](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype) follows that the 48 defined Event Types are only registered since 1996, prior to this only a small subset of event types were recorded. This will affect the list (see tornadoes below) but, for the purpose here, I will leave it at this.  
+
+### &nbsp;
+### Human Damage: Fatalities and Injuries
+
+The problem here is to find the most damaging event types for fatalities and injuries *together*. Just adding them up doesn't make sense, neither ethically nor economically. First, let's find out whether the problem really arises:
+
+```{r human-1, results='hold'}
+
+# get total fatalities and injuries
+HUMD <- unique(STORM[ ,`:=`(sF=sum(FATALITIES),sI=sum(INJURIES)), 
+                       by=EVTYPE][, list(EVTYPE, sF, sI)],
+                by="EVTYPE")
+
+print("10 worst event types regarding fatalities:")
+setorder(HUMD,-sF)
+HUMD[1:10, ]
+
+print("")
+print("10 worst event types regarding injuries:")
+setorder(HUMD,-sI)
+HUMD[1:10, ]
+
+```
+
+So, yes, the problem is there. What is worse  
+- avalanche (224 killed, 170 injured), or  
+- wildfire (90 killed, 1606 injured)  ??  
+
+It would go far beyond the scope of this exercise to resolve this question. Despite the
+problematic of doing so, I will add the two together to classify by the
+*total number of people affected*.  
+
+This is the list and the corresponding bar plot:  
+
+```{r human-2}
+
+# get total fatalities and injuries and total people affected
+HUMD <- unique(STORM[ ,`:=`(sF= sum(FATALITIES), sI=sum(INJURIES), totAff=sF+sI), by=EVTYPE]
+                    [, list(EVTYPE, sF, sI, totAff)],
+                by="EVTYPE")
+# limit to 10 worst
+setorder(HUMD,-totAff)
+HUMD <- HUMD[1:10, ]
+HUMD
+
+# bar plot
+hdm <- as.matrix(HUMD[ ,list(sF,sI)])
+colnames(hdm) <- c("Fatalities","Injuries")
+rownames(hdm) <- as.vector(HUMD[ ,EVTYPE])
+hdm <- t(hdm)  # rows <> cols
+barplot(hdm, 
+        col = c("navyblue", "royalblue2"), 
+        ylim = c(0, 10000),
+        beside = FALSE, las = 3, 
+        cex.axis = 0.7, cex.names = 0.4,
+        main = "Most damaging event types:\nHuman Damage 1950-2011\n(worst 10)", 
+        ylab = "Total number of affected people", 
+        legend.text = rownames(hdm))
+
+```
+
+* **note:**  
+    *"Tornado"* is the most damaging event type, by far. It affects nearly 10 times more
+    people than the next most damaging event type, *"Thunderstorm Wind"*. I deliberatly set
+    the y-axis to a max of 10,000 and let the tornadoes run out of the picture - otherwise
+    there would be a poor plot and I didn't want to use a log() scale.
+
+
+
+### &nbsp;
+### Material Damage: Losses in Properties and Crops
+
+This is the list and the corresponding bar plot:  
+
+```{r material-1}
+
+# get total fatalities and injuries and total people affected
+MATD <- unique(STORM[ ,`:=`(Prop=sum(PropDamage), Crop=sum(CropDamage)), 
+                            by=EVTYPE]
+                    [, list(EVTYPE, Prop, Crop)],
+                by="EVTYPE")
+MATD <- MATD[ ,Total:=Prop+Crop]
+# limit to 10 worst
+setorder(MATD,-Total)
+MATD <- MATD[1:10, ]
+# reduce to millions
+MATD <- MATD[ ,`:=`(Prop=Prop/1000000, Crop=Crop/1000000, Total=Total/1000000)] 
+MATD
+
+# bar plot
+mdm <- as.matrix(MATD[ ,list(Prop,Crop)])
+rownames(mdm) <- as.vector(MATD[ ,EVTYPE])
+mdm <- t(mdm)  # rows <> cols
+barplot(mdm, 
+        col = c("navyblue", "royalblue2"), 
+        # ylim = c(0, 10000),
+        beside = FALSE, las = 3, 
+        cex.axis = 0.7, cex.names = 0.4,
+        main = "Most damaging event types:\nMaterial Damage 1950-2011\n(worst 10)", 
+        ylab = "Total Damage in Millions", 
+        legend.text = rownames(mdm))
+
+```
 
 
 ## &nbsp;
