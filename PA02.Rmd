@@ -424,8 +424,8 @@ barplot(mdm,
         # ylim = c(0, 10000),
         beside = FALSE, las = 3, 
         cex.axis = 0.7, cex.names = 0.4,
-        main = "Most damaging event types:\nMaterial Damage 1950-2011\n(worst 10)", 
-        ylab = "Total Damage in Millions", 
+        main = "Most damaging event types:\nMaterial Damage 1950-2011\n(worst 10, in million US$)", 
+        ylab = "Total Damage in Million US$", 
         legend.text = rownames(mdm))
 
 ```
